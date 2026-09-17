@@ -23,7 +23,7 @@ def client():
     )
     Base.metadata.create_all(engine)
     with Session(engine) as db, db.begin():
-        category = Category(name="Prueba", slug="prueba")
+        category = Category(name="Example", slug="example")
         db.add(category)
         db.flush()
         for state in ["draft", "published", "archived"]:
@@ -85,3 +85,29 @@ def test_invalid_configuration():
         Settings(database_url="sqlite://")
     with pytest.raises(ValidationError):
         Settings(database_url="postgresql+psycopg://localhost/test", cors_origins=["*"])
+
+
+def test_validation_does_not_echo_password(client):
+    secret = "private-value" * 20
+    response = client.post("/api/v1/auth/login", json={"email": "invalid", "password": secret})
+    assert response.status_code == 422
+    assert secret not in response.text
+    assert "input" not in response.text
+
+
+def test_cors_and_openapi(client):
+    for origin, code in [("http://localhost:4200", 200), ("https://unknown.example", 400)]:
+        response = client.options(
+            "/api/v1/admin/projects",
+            headers={
+                "Origin": origin,
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "Authorization",
+            },
+        )
+        assert response.status_code == code
+    paths = client.get("/openapi.json").json()["paths"]
+    for path, methods in paths.items():
+        if path.startswith("/api/v1/admin/") or path in {"/api/v1/auth/me", "/api/v1/auth/logout"}:
+            for operation in methods.values():
+                assert {"HTTPBearer": []} in operation["security"]

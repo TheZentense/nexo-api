@@ -38,5 +38,6 @@ class Project(Base):
     beneficiaries_count: Mapped[int | None]
     progress_percent: Mapped[int] = mapped_column(server_default="0")
     status: Mapped[str] = mapped_column(String(20), server_default="draft")
+    version: Mapped[int] = mapped_column(server_default="1")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

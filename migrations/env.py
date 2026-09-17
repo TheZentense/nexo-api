@@ -1,12 +1,13 @@
 from alembic import context
 from sqlalchemy import create_engine, pool
 
-from app.core.config import Settings
+from app.core.config import DatabaseSettings
 from app.core.database import Base
+from app.modules.auth import models as auth_models  # noqa: F401
 from app.modules.projects import models  # noqa: F401
 
-settings = Settings()
-url = settings.database_url.get_secret_value()
+settings = DatabaseSettings()
+url = (settings.migration_database_url or settings.database_url).get_secret_value()
 target_metadata = Base.metadata
 
 if context.is_offline_mode():

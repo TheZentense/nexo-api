@@ -1,4 +1,4 @@
-"""Create categories and projects without changing existing tables."""
+"""Crea las tablas de categorías y proyectos."""
 
 import sqlalchemy as sa
 from alembic import op
@@ -84,6 +84,4 @@ def upgrade():
 
 
 def downgrade():
-    raise RuntimeError(
-        "Reversión destructiva deshabilitada: crea una migración correctiva revisada."
-    )
+    raise RuntimeError("Destructive rollback is disabled; use a reviewed corrective migration.")
