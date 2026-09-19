@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.audit import set_audit_context
 from app.modules.auth.models import AdminUser
 from app.modules.auth.schemas import LoginInput
 from app.modules.auth.security import DUMMY_HASH, password_hasher, verify_password
@@ -38,6 +39,7 @@ def login(
     if not valid or user is None or not user.is_active:
         raise HTTPException(401, "Invalid credentials")
     if password_hasher.check_needs_rehash(user.password_hash):
+        set_audit_context(db, user.id)
         user.password_hash = password_hasher.hash(data.password.get_secret_value())
     token = create_session(db, request, user.id)
     return {

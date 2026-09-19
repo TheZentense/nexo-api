@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.audit import set_audit_context
 from app.modules.auth.router import database
 from app.modules.auth.service import bearer, require_admin
 from app.modules.projects import service
@@ -35,7 +36,9 @@ def admin_database(
     db: DB,
     credentials: Annotated[object, Depends(bearer)],
 ):
-    require_admin(db, request)
+    user, _ = require_admin(db, request)
+    if request.method not in {"GET", "HEAD", "OPTIONS"}:
+        set_audit_context(db, user.id)
     response.headers["Cache-Control"] = "no-store"
 
     return db

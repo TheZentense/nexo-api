@@ -12,7 +12,7 @@ El código y los mensajes de la API están en inglés; esta guía y los comentar
 - Evitar que una edición antigua sobrescriba cambios recientes.
 - Crear cuentas, cambiar contraseñas y desactivarlas desde la terminal.
 
-Esta etapa todavía no incluye archivos multimedia, auditoría, formularios ni pagos.
+Esta etapa todavía no incluye archivos multimedia, formularios ni pagos.
 Para publicar se piden los datos del proyecto; la portada se incorporará con multimedia.
 No se incluyen cuentas, contraseñas ni datos reales.
 
@@ -31,7 +31,12 @@ app/
   main.py               # reúne las rutas y los controles de salud
 migrations/             # cambios de la base, en orden
 scripts/                # tareas locales de administración
-tests/                  # pruebas rápidas y pruebas con PostgreSQL
+tests/
+  test_catalog.py       # consultas públicas y validaciones
+  test_admin.py         # JWT y administración
+  test_audit.py         # historial y permisos
+  conftest.py           # prepara la base temporal de pruebas
+  helpers.py            # pasos compartidos, como login y creación de proyectos
 ```
 
 Angular consumirá la API por HTTP. Las credenciales de PostgreSQL se quedan en el backend.
@@ -182,6 +187,53 @@ PostgreSQL comprueban las migraciones, restricciones, versiones y autenticación
 
 ## Pendiente
 
-Multimedia, auditoría y formularios se agregarán en otras entregas. Antes de producción
+Multimedia y formularios se agregarán en otras entregas. Antes de producción
 faltan HTTPS, límites del proxy, revisión de roles y respaldo con prueba de restauración.
 Las guías privadas, archivos locales, credenciales y bases de datos quedan fuera de Git.
+
+
+## Historial de cambios en PostgreSQL
+
+La migración `0004_database_audit` agrega `audit.events`. Registra altas, cambios y
+borrados en proyectos, categorías y cuentas. En los proyectos también distingue
+publicar, archivar y volver a borrador. Los datos existentes no se modifican ni se
+crean eventos retroactivos: el historial empieza al aplicar esta migración.
+
+Cada evento incluye fecha, registro afectado, operación, valores anteriores y nuevos,
+cuenta de base de datos y, para cambios desde la API, el administrador y un identificador
+de la operación. El administrador viene del JWT validado, no de un campo enviado por
+el cliente. Su identidad se limpia al terminar la transacción.
+
+Los cambios y el evento se guardan juntos. Si falla la operación o se revierte la
+transacción, tampoco queda el evento. Las consultas no generan historial.
+
+En cuentas solo se guardan el ID y el estado activo. Un cambio de contraseña se marca
+como `credentials_changed`, sin copiar contraseñas, hashes, correos ni tokens.
+Las sesiones y los contadores de intentos no se auditan. Los textos de proyectos sí
+forman parte del historial: no incluyas información privada en contenido público.
+
+Para consultar desde pgAdmin con la cuenta propietaria de las migraciones:
+
+```sql
+SELECT occurred_at, actor_id, request_id, database_user,
+       table_name, record_id, operation, action, before_data, after_data
+FROM audit.events
+ORDER BY id DESC
+LIMIT 50;
+```
+
+No hay pantalla ni endpoint para consultar auditoría. El rol normal de la API no
+debe ser propietario de las tablas, superusuario, miembro del rol de migraciones
+ni tener permisos de escritura sobre el esquema audit. La migración no da acceso
+a PUBLIC; los triggers escriben con una función de permisos controlados y rutas
+SQL fijas. Si ya diste permisos especiales a otros roles, debes revisarlos aparte.
+
+Las pruebas verifican que un rol limitado pueda cambiar contenido y generar su evento,
+pero no leer, insertar, editar, borrar o vaciar el historial ni desactivar el trigger.
+Para ejecutar esa prueba, TEST_DATABASE_URL debe usar una cuenta local de pruebas con
+CREATEDB y CREATEROLE. El rol temporal se elimina al revertir la transacción de prueba.
+
+Un cambio hecho directamente por SQL o por las herramientas de cuentas puede tener
+actor_id vacío: se conserva database_user sin inventar quién estaba usando esa cuenta.
+Esto no es un registro imposible de alterar: el propietario o un superusuario conserva
+poder sobre la base. La separación de roles y los respaldos son necesarios en producción.
