@@ -237,3 +237,24 @@ Un cambio hecho directamente por SQL o por las herramientas de cuentas puede ten
 actor_id vacío: se conserva database_user sin inventar quién estaba usando esa cuenta.
 Esto no es un registro imposible de alterar: el propietario o un superusuario conserva
 poder sobre la base. La separación de roles y los respaldos son necesarios en producción.
+
+
+## Buscar proyectos desde la administración
+
+En Swagger, usa GET `/api/v1/admin/projects` con el campo opcional `q`:
+
+```text
+/api/v1/admin/projects?q=community&status=draft&year=2026&page=1&page_size=12
+```
+
+Busca una parte del título, sin distinguir mayúsculas y minúsculas. Puedes combinarlo
+con estado, categoría (`category_id`), año y paginación. `total` cuenta todas las
+coincidencias, aunque la página muestre solo algunas.
+
+Los espacios al principio y al final se ignoran; dejar q vacío conserva el listado
+habitual. Se admiten hasta 200 caracteres. Los símbolos `%` y `_` se buscan como texto,
+no como comodines. No se busca dentro de la descripción ni se eliminan las tildes.
+
+Esta búsqueda requiere JWT y solo se agrega al listado administrativo. El catálogo
+público conserva sus filtros y muestra únicamente proyectos publicados. Buscar no
+modifica datos ni genera eventos de auditoría. Las pruebas están en `tests/test_project_search.py`.

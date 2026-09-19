@@ -58,8 +58,11 @@ def validate_publication(project: Project):
         )
 
 
-def list_projects(db: Session, *, status, category_id, year, page, page_size):
+def list_projects(db: Session, *, status, category_id, year, page, page_size, q: str | None = None):
     conditions = []
+    if q and q.strip():
+        # Buscar el texto tal cual: % y _ no deben actuar como comodines.
+        conditions.append(Project.title.icontains(q.strip(), autoescape=True))
     if status is not None:
         conditions.append(Project.status == status)
     if category_id is not None:
