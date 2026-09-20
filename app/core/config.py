@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import make_url
@@ -24,6 +26,9 @@ class Settings(DatabaseSettings):
     jwt_issuer: str = "nexo-api"
     jwt_audience: str = "nexo-admin"
     cors_origins: list[str] = ["http://localhost:4200"]
+    storage_root: Path = Path("storage")
+    video_max_bytes: int = Field(default=100 * 1024 * 1024, ge=1, le=100 * 1024 * 1024)
+    video_max_seconds: int = Field(default=120, ge=1, le=120)
 
     @field_validator("cors_origins")
     @classmethod

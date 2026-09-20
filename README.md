@@ -12,7 +12,7 @@ El código y los mensajes de la API están en inglés; esta guía y los comentar
 - Evitar que una edición antigua sobrescriba cambios recientes.
 - Crear cuentas, cambiar contraseñas y desactivarlas desde la terminal.
 
-Esta etapa todavía no incluye archivos multimedia, formularios ni pagos.
+Esta etapa incluye videos. Todavía no incluye carga de imágenes, formularios ni pagos.
 Para publicar se piden los datos del proyecto; la portada se incorporará con multimedia.
 No se incluyen cuentas, contraseñas ni datos reales.
 
@@ -28,6 +28,7 @@ app/
   modules/
     auth/               # login, JWT y sesiones
     projects/           # categorías y proyectos
+    media/              # videos, almacenamiento y conversión
   main.py               # reúne las rutas y los controles de salud
 migrations/             # cambios de la base, en orden
 scripts/                # tareas locales de administración
@@ -73,7 +74,7 @@ En desarrollo puedes usar una cuenta local propia para ambas conexiones. Para un
 entorno compartido usa roles separados: MIGRATION_DATABASE_URL para migraciones y
 cuentas; DATABASE_URL para la API. La cuenta de la API necesita lectura de admin_users,
 actualización de password_hash, lectura/inserción/borrado de admin_sessions,
-lectura/inserción/actualización de auth_rate_limits y de categorías/proyectos.
+lectura/inserción/actualización de auth_rate_limits, categorías/proyectos y project_videos.
 No necesita crear tablas ni crear o desactivar administradores.
 
 ## Probar el acceso
@@ -274,3 +275,110 @@ JWT, no se guarda en caché y consultarlo no genera eventos de auditoría.
 No necesita una migración ni agrega una pantalla. Angular podrá usar esta respuesta
 para las tarjetas de totales y la lista de actividad reciente. Las pruebas están en
 `tests/test_dashboard.py`.
+
+
+## Videos de los proyectos
+
+La migración `0005_project_videos` agrega una tabla y su auditoría, sin borrar ni
+actualizar los proyectos existentes. El original se conserva; la conversión genera
+un MP4 H.264/AAC y una portada JPEG. Los archivos nunca se montan como carpeta pública.
+
+Aceptamos MP4, MOV y WebM compatibles con FFmpeg, hasta 100 MiB y dos minutos.
+Se comprueba el contenido; cambiar la extensión no convierte un archivo en video.
+La subida revisa tamaño y cabecera. El worker comprueba duración, resolución y
+que se pueda decodificar; si falla, deja el registro en `failed` y conserva el original.
+Se admiten hasta dos videos por proyecto, incluidos los pendientes y fallidos.
+Esta etapa no incluye eliminación ni reemplazo de originales.
+
+La salida llega hasta 1280 × 720, conserva proporciones y no amplía videos pequeños.
+Usa 30 fps, compresión con pérdida y `faststart`; no garantiza que todo archivo sea
+más pequeño que su original. La entrada admite hasta 3840 × 2160 píxeles, también
+verticales. Las opciones de protocolos y reproducción se describen en la
+[documentación de FFmpeg](https://ffmpeg.org/ffmpeg-protocols.html) y sus
+[formatos](https://ffmpeg.org/ffmpeg-formats.html).
+
+### Probar la subida
+
+Después de instalar las dependencias y ejecutar `alembic upgrade head`, inicia la API
+como se indica arriba. En otra terminal, con las mismas variables de conexión,
+JWT y almacenamiento, inicia el worker desde la raíz del repositorio:
+
+```powershell
+.venv/Scripts/python.exe -m app.modules.media.worker
+```
+
+Para procesar solo un trabajo pendiente y terminar:
+
+```powershell
+.venv/Scripts/python.exe -m app.modules.media.worker --once
+```
+
+`STORAGE_ROOT` puede indicar una carpeta absoluta privada. Su valor predeterminado es
+`storage`, relativo al directorio de trabajo e ignorado por Git. API y worker deben
+usar la misma carpeta. `VIDEO_MAX_BYTES` y `VIDEO_MAX_SECONDS` permiten bajar los
+límites. El worker convierte en un subproceso que no recibe las credenciales de la
+base, JWT ni bucket. Los límites de tiempo y protocolos no reemplazan el aislamiento
+del proceso con permisos y recursos restringidos al desplegar en producción.
+
+En Swagger, autoriza con JWT y utiliza `POST /api/v1/admin/projects/{id}/videos`.
+El cuerpo es el archivo binario (`application/octet-stream`), no JSON ni multipart.
+También puedes subirlo desde PowerShell, con la API en el puerto 8000:
+
+```powershell
+$videoToken = Read-Host 'Access token' -MaskInput
+$videoProject = Read-Host 'Project UUID'
+$videoFile = Read-Host 'Video path'
+Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8000/api/v1/admin/projects/$videoProject/videos" -Headers @{Authorization="Bearer $videoToken"} -ContentType 'application/octet-stream' -InFile $videoFile
+```
+
+La respuesta es `202` con `status: pending`; significa recibido, no convertido.
+Consulta `GET /api/v1/admin/projects/{id}/videos` para ver el avance.
+Los estados guardados son `pending`, `processing`, `ready` y `failed`.
+Si un archivo listo falta o el almacenamiento no responde, se devuelve `unavailable`
+sin cambiar la base. Los errores técnicos y las claves privadas no salen en el listado.
+
+- `GET /api/v1/admin/videos/{id}/content`: MP4 optimizado, requiere JWT.
+- `GET /api/v1/admin/videos/{id}/poster`: portada, requiere JWT.
+- `GET /api/v1/admin/videos/{id}/original`: descarga privada del original.
+- `POST /api/v1/admin/videos/{id}/retry`: reintenta un fallo o un proceso detenido
+  durante más de diez minutos. No reemplaza el original; un archivo corrupto volverá
+  a fallar. Los procesos activos rechazan reintentos para evitar duplicados.
+- `GET /api/v1/projects/{slug}/videos`: consulta pública de un proyecto publicado.
+
+El listado devuelve `video_url` y `poster_url` relativas a la API. Los visitantes
+solo pueden descargar las variantes de proyectos publicados; al archivar o volver
+a borrador, las rutas públicas dejan de entregarlas. Las respuestas no se guardan
+en caché. Esto no puede retirar una copia que alguien haya descargado antes.
+
+### Mensaje de video no disponible
+
+Angular debe usar `status` antes de crear el reproductor:
+
+- `pending` o `processing`: mostrar “Video en preparación”.
+- `ready`: usar `video_url` y, si existe, `poster_url`.
+- `failed` o `unavailable`: mostrar “Video no disponible por el momento”.
+
+También debe manejar el evento `error` del reproductor, porque la red puede fallar
+después de consultar la API. El backend no puede cambiar el mensaje nativo del navegador.
+Las rutas de archivos mantienen códigos HTTP 404/503 con un mensaje genérico; Angular
+los transforma en ese aviso visual. La vista administrativa debe obtener los archivos
+con la cabecera Bearer y crear una URL de objeto para previsualizarlos, liberándola
+al cerrar. Nunca colocar el JWT en la URL.
+
+### Cambio posterior a un bucket
+
+`media/storage.py` concentra `put`, `download`, `exists`, `delete` y `response`.
+Hoy se usa `LocalStorage`; PostgreSQL guarda claves de objetos, nunca rutas del equipo
+ni URLs firmadas. Un adaptador de bucket implementará esas operaciones y se inyectará
+en la API y el worker, manteniendo las mismas rutas y permisos.
+
+Los originales y las variantes seguirán privados en el bucket. Para entregar una
+variante, la API comprobará primero el estado del proyecto. Se podrá transmitir el
+archivo o generar una URL firmada corta; esta última puede seguir funcionando hasta
+su vencimiento aunque se archive el proyecto. El proveedor, la caducidad y la caché
+se decidirán al integrar el bucket. No hay SDK ni credenciales de almacenamiento
+externo en esta etapa.
+
+Las pruebas generan clips pequeños y usan carpetas y bases temporales. Cubren
+formatos, conservación de originales, fallos, reintentos, auditoría, permisos,
+lectura parcial de video y conservación de los datos al migrar.
