@@ -29,6 +29,8 @@ class Settings(DatabaseSettings):
     storage_root: Path = Path("storage")
     video_max_bytes: int = Field(default=100 * 1024 * 1024, ge=1, le=100 * 1024 * 1024)
     video_max_seconds: int = Field(default=120, ge=1, le=120)
+    image_max_bytes: int = Field(default=15 * 1024 * 1024, ge=1, le=15 * 1024 * 1024)
+    image_max_pixels: int = Field(default=25_000_000, ge=1, le=25_000_000)
 
     @field_validator("cors_origins")
     @classmethod
