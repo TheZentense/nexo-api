@@ -79,6 +79,14 @@ class ProjectDetail(ProjectSummary):
     description: str | None
 
 
+class PublicProjectSummary(ProjectSummary):
+    cover_url: str | None = None
+
+
+class PublicProjectDetail(ProjectDetail):
+    cover_url: str | None = None
+
+
 class AdminProject(ProjectDetail):
     status: Status
     version: int
@@ -87,7 +95,7 @@ class AdminProject(ProjectDetail):
 
 
 class PublicPage(BaseModel):
-    items: list[ProjectSummary]
+    items: list[PublicProjectSummary]
     total: int
     page: int
     page_size: int

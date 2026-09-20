@@ -93,6 +93,13 @@ def test_complete_gallery_cover_original_and_visibility(images):
     image = client.get(variant["url"])
     assert image.status_code == 200 and image.headers["content-type"] == "image/webp"
     assert image.headers["cache-control"] == "no-store"
+    detail = client.get(f"/api/v1/projects/{project['slug']}").json()
+    assert detail["cover_url"] == f"/api/v1/images/{first}/w480"
+    public_items = client.get("/api/v1/projects").json()["items"]
+    assert (
+        next(item for item in public_items if item["id"] == project["id"])["cover_url"]
+        == detail["cover_url"]
+    )
     assert client.get(f"/api/v1/admin/images/{first}/original").status_code == 401
     assert client.get(f"/api/v1/images/{first}/original").status_code == 422
     client.headers["Authorization"] = token
@@ -175,9 +182,11 @@ def test_missing_variants_and_cover_fallback(images):
         variants = db.get(ProjectImage, UUID(identifier)).variants
     storage.delete(variants["w480"]["key"])
     assert len(gallery(client, project)["items"][0]["variants"]) == 2
+    assert client.get(f"/api/v1/projects/{project['slug']}").json()["cover_url"].endswith("/w960")
     for info in variants.values():
         storage.delete(info["key"])
     assert gallery(client, project)["items"][0]["status"] == "unavailable"
+    assert client.get(f"/api/v1/projects/{project['slug']}").json()["cover_url"] is None
     assert client.get(f"/api/v1/images/{identifier}/w480").json() == {"detail": "Media unavailable"}
 
 
