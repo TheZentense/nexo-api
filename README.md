@@ -12,8 +12,8 @@ El código y los mensajes de la API están en inglés; esta guía y los comentar
 - Evitar que una edición antigua sobrescriba cambios recientes.
 - Crear cuentas, cambiar contraseñas y desactivarlas desde la terminal.
 
-Esta etapa incluye videos. Todavía no incluye carga de imágenes, formularios ni pagos.
-Para publicar se piden los datos del proyecto; la portada se incorporará con multimedia.
+Esta etapa incluye imágenes y videos. Todavía no incluye formularios ni pagos.
+Para publicar se piden los datos del proyecto; la portada es opcional.
 No se incluyen cuentas, contraseñas ni datos reales.
 
 ## Cómo está organizado
@@ -28,7 +28,7 @@ app/
   modules/
     auth/               # login, JWT y sesiones
     projects/           # categorías y proyectos
-    media/              # videos, almacenamiento y conversión
+    media/              # imágenes, videos, almacenamiento y conversión
   main.py               # reúne las rutas y los controles de salud
 migrations/             # cambios de la base, en orden
 scripts/                # tareas locales de administración
@@ -74,7 +74,7 @@ En desarrollo puedes usar una cuenta local propia para ambas conexiones. Para un
 entorno compartido usa roles separados: MIGRATION_DATABASE_URL para migraciones y
 cuentas; DATABASE_URL para la API. La cuenta de la API necesita lectura de admin_users,
 actualización de password_hash, lectura/inserción/borrado de admin_sessions,
-lectura/inserción/actualización de auth_rate_limits, categorías/proyectos y project_videos.
+lectura/inserción/actualización de auth_rate_limits, categorías/proyectos, project_videos y project_images.
 No necesita crear tablas ni crear o desactivar administradores.
 
 ## Probar el acceso
@@ -382,3 +382,82 @@ externo en esta etapa.
 Las pruebas generan clips pequeños y usan carpetas y bases temporales. Cubren
 formatos, conservación de originales, fallos, reintentos, auditoría, permisos,
 lectura parcial de video y conservación de los datos al migrar.
+
+
+## Imágenes, portada y galería
+
+La migración `0006_project_images` agrega las imágenes y su auditoría. No modifica
+los proyectos, videos ni eventos existentes. Después de migrar, el rol de la API
+y del worker necesita SELECT, INSERT y UPDATE sobre `project_images`.
+
+Se usa el mismo worker y almacenamiento privado de los videos. No hay un segundo
+servicio ni una cola externa. El worker alterna videos e imágenes; `--once` procesa
+como máximo un archivo, dando prioridad a un video pendiente si existe.
+
+### Subir y consultar
+
+- `POST /api/v1/admin/projects/{id}/images`: archivo binario con JWT, devuelve 202.
+  Acepta `application/octet-stream`, `image/jpeg`, `image/png` o `image/webp`.
+  El parámetro opcional `alt_text` describe la imagen (hasta 250 caracteres).
+- `GET /api/v1/admin/projects/{id}/images`: orden, portada, `project_version` y estado
+  de las imágenes, con variantes disponibles para previsualización autenticada.
+- `GET /api/v1/projects/{slug}/images`: galería pública solo de proyectos publicados.
+- `GET /api/v1/admin/images/{id}/original`: original privado descargable con JWT.
+- `GET /api/v1/admin/images/{id}/{variant}` y `/api/v1/images/{id}/{variant}`:
+  variantes privadas y públicas, respectivamente. `variant` es w480, w960 o w1600.
+- `POST /api/v1/admin/images/{id}/retry`: reintento de un fallo o un proceso que lleva
+  más de diez minutos detenido, con la misma regla que los videos.
+
+Se aceptan JPEG, PNG y WebP estáticos. El límite inicial es 15 MiB, 25 millones de
+píxeles y diez imágenes por proyecto, incluyendo pendientes y fallidas. Se pueden
+reducir los límites con `IMAGE_MAX_BYTES` e `IMAGE_MAX_PIXELS`. No se aceptan SVG,
+GIF ni imágenes animadas. La cabecera se comprueba al subir; la decodificación y
+los límites de píxeles se verifican después, fuera de la petición web.
+
+El original no cambia. Se corrige la orientación de la copia y se generan WebP
+con ancho máximo de 480, 960 y 1600, conservando proporciones y limitando la altura
+a 1600. Las imágenes pequeñas no se amplían y no se guardan tamaños duplicados.
+Los nombres de variante indican el ancho máximo: usa `width` y `height` de la
+respuesta para conocer las dimensiones reales. Cada variante incluye URL y peso.
+
+La copia web conserva transparencia y excluye EXIF, XMP y perfil ICC del original.
+La compresión y la eliminación del perfil pueden cambiar ligeramente la apariencia;
+se preserva el original para otros usos. Las medidas de decodificación siguen la
+[documentación de seguridad de Pillow](https://pillow.readthedocs.io/en/stable/handbook/security.html).
+
+### Elegir portada y ordenar
+
+Usa `PATCH /api/v1/admin/projects/{id}/images`, tomando la versión del último listado:
+
+```json
+{
+  "version": 3,
+  "image_ids": ["SECOND-IMAGE-UUID", "FIRST-IMAGE-UUID"],
+  "cover_image_id": "FIRST-IMAGE-UUID"
+}
+```
+
+La lista debe incluir todas las imágenes del proyecto exactamente una vez. La portada
+puede ser null, o una imagen disponible del mismo proyecto. Solo puede haber una
+portada por proyecto, también protegido por un índice único en PostgreSQL.
+Una versión antigua devuelve 409; vuelve a cargar la galería antes de guardar.
+
+Subir una imagen, ordenar, elegir portada o editar su texto actualiza la versión del
+proyecto y su fecha de modificación. Usa la versión nueva también al editar o publicar
+el proyecto. La conversión automática no cambia esa versión ni elige portada por ti.
+Para editar el texto usa `PATCH /api/v1/admin/images/{id}`:
+
+```json
+{"version": 4, "alt_text": "Personas participando en el taller comunitario"}
+```
+
+El catálogo y el detalle públicos incluyen `cover_url`, o null cuando no hay una
+portada disponible. Las portadas del listado se consultan juntas en la base. Si falta
+una variante, se puede usar otra disponible; si no queda ninguna, la imagen responde
+`unavailable`, sin URLs de archivos rotos. Angular debe manejar además los errores de
+red y mostrar una imagen alternativa o un mensaje. No se entregan rutas internas ni
+claves de almacenamiento. Archivar el proyecto cierra el acceso público a sus imágenes.
+
+Retirar o reemplazar imágenes y videos queda para un cambio posterior; esta etapa
+no elimina originales. El adaptador de bucket también queda pendiente, sin cambiar
+la interfaz de almacenamiento ni introducir URLs permanentes en la base.
