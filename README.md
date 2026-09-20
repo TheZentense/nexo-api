@@ -258,3 +258,19 @@ no como comodines. No se busca dentro de la descripción ni se eliminan las tild
 Esta búsqueda requiere JWT y solo se agrega al listado administrativo. El catálogo
 público conserva sus filtros y muestra únicamente proyectos publicados. Buscar no
 modifica datos ni genera eventos de auditoría. Las pruebas están en `tests/test_project_search.py`.
+
+
+## Resumen del panel administrativo
+
+Después del login y de usar Authorize en Swagger, consulta
+GET `/api/v1/admin/dashboard`. Devuelve el total de proyectos, las cantidades por
+estado (`draft`, `published`, `archived`) y `recent`, con hasta cinco proyectos
+ordenados por su última modificación. Si dos fechas coinciden, desempata por ID.
+
+Sin proyectos, los contadores son cero y `recent` es una lista vacía. El resumen
+incluye todos los proyectos, no solo los de la página actual del listado. Requiere
+JWT, no se guarda en caché y consultarlo no genera eventos de auditoría.
+
+No necesita una migración ni agrega una pantalla. Angular podrá usar esta respuesta
+para las tarjetas de totales y la lista de actividad reciente. Las pruebas están en
+`tests/test_dashboard.py`.

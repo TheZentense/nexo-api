@@ -135,4 +135,3 @@ def test_search_does_not_write_audit_or_expose_drafts(search_catalog):
     assert result["total"] == 1 and result["items"][0]["title"] == "COMMUNITY health"
     paths = client.get("/openapi.json").json()["paths"]
     assert "q" not in {p["name"] for p in paths["/api/v1/projects"]["get"]["parameters"]}
-

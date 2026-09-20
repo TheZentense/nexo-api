@@ -80,3 +80,18 @@ def list_projects(db: Session, *, status, category_id, year, page, page_size, q:
         .limit(page_size)
     ).all()
     return {"items": items, "total": total, "page": page, "page_size": page_size}
+
+
+def dashboard(db: Session):
+    counts = dict(db.execute(select(Project.status, func.count()).group_by(Project.status)).all())
+    # El ID mantiene el orden si dos proyectos tienen la misma fecha de edición.
+    recent = db.scalars(
+        select(Project).order_by(Project.updated_at.desc(), Project.id.desc()).limit(5)
+    ).all()
+    return {
+        "total": sum(counts.values()),
+        "draft": counts.get("draft", 0),
+        "published": counts.get("published", 0),
+        "archived": counts.get("archived", 0),
+        "recent": recent,
+    }

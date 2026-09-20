@@ -98,3 +98,11 @@ class AdminPage(BaseModel):
     total: int
     page: int
     page_size: int
+
+
+class Dashboard(BaseModel):
+    total: int
+    draft: int
+    published: int
+    archived: int
+    recent: list[AdminProject]
