@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from sqlalchemy import func, select
 
 from app.modules.media.models import ProjectVideo
+from app.modules.media.uploads import receive_file
 from app.modules.media.video import InvalidVideo, input_options
 from app.modules.projects.models import Project
 from app.modules.projects.router import DB, AdminDB
@@ -68,31 +69,20 @@ async def upload(project_id: UUID, request: Request, db: AdminDB):
     limit = request.app.state.settings.video_max_bytes
     if db.get(Project, project_id) is None:
         raise HTTPException(404, "Project not found")
-    header = request.headers.get("content-length")
-    if header:
-        try:
-            length = int(header)
-        except ValueError:
-            raise HTTPException(400, "Invalid content length") from None
-        if length < 0 or length > limit:
-            raise HTTPException(413, "Video exceeds the file size limit")
-    if request.headers.get("content-type", "").split(";")[0] not in {
-        "application/octet-stream",
-        "video/mp4",
-        "video/quicktime",
-        "video/webm",
-    }:
-        raise HTTPException(415, "Unsupported content type")
     storage = request.app.state.storage
     with TemporaryDirectory(prefix="nexo-upload-") as temporary:
         source = Path(temporary) / "upload"
-        size = 0
-        with source.open("wb") as stream:
-            async for chunk in request.stream():
-                size += len(chunk)
-                if size > limit:
-                    raise HTTPException(413, "Video exceeds the file size limit")
-                stream.write(chunk)
+        size = await receive_file(
+            request,
+            source,
+            limit=limit,
+            content_types={
+                "application/octet-stream",
+                "video/mp4",
+                "video/quicktime",
+                "video/webm",
+            },
+        )
         try:
             input_options(source)
         except InvalidVideo:

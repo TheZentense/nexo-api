@@ -11,6 +11,8 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.core.config import Settings
 from app.core.database import build_engine
 from app.modules.auth.router import router as auth_router
+from app.modules.media.image_router import admin as image_admin
+from app.modules.media.image_router import public as image_public
 from app.modules.media.router import admin as media_admin
 from app.modules.media.router import public as media_public
 from app.modules.media.storage import LocalStorage
@@ -41,6 +43,8 @@ def create_app(settings: Settings | None = None):
     app.include_router(auth_router, prefix="/api/v1/auth", tags=["Authentication"])
     app.include_router(media_admin, prefix="/api/v1/admin", tags=["Videos"])
     app.include_router(media_public, prefix="/api/v1", tags=["Videos"])
+    app.include_router(image_admin, prefix="/api/v1/admin", tags=["Images"])
+    app.include_router(image_public, prefix="/api/v1", tags=["Images"])
 
     @app.exception_handler(HTTPException)
     async def http_error(request, exc):
