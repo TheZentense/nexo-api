@@ -11,6 +11,9 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.core.config import Settings
 from app.core.database import build_engine
 from app.modules.auth.router import router as auth_router
+from app.modules.media.router import admin as media_admin
+from app.modules.media.router import public as media_public
+from app.modules.media.storage import LocalStorage
 from app.modules.projects.router import admin, public
 
 
@@ -26,6 +29,7 @@ def create_app(settings: Settings | None = None):
     app = FastAPI(title="Nexo API", version="0.2.0", lifespan=lifespan)
     app.state.engine = engine
     app.state.settings = settings
+    app.state.storage = LocalStorage(settings.storage_root)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
@@ -35,6 +39,8 @@ def create_app(settings: Settings | None = None):
     app.include_router(public, prefix="/api/v1", tags=["Projects"])
     app.include_router(admin, prefix="/api/v1/admin", tags=["Administration"])
     app.include_router(auth_router, prefix="/api/v1/auth", tags=["Authentication"])
+    app.include_router(media_admin, prefix="/api/v1/admin", tags=["Videos"])
+    app.include_router(media_public, prefix="/api/v1", tags=["Videos"])
 
     @app.exception_handler(HTTPException)
     async def http_error(request, exc):
