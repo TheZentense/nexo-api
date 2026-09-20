@@ -15,6 +15,7 @@ from app.modules.projects.schemas import (
     AdminProject,
     CategoryInput,
     CategoryOutput,
+    Dashboard,
     ProjectCreate,
     ProjectDetail,
     ProjectPatch,
@@ -153,3 +154,8 @@ def archive(project_id: UUID, data: VersionInput, db: AdminDB):
 @admin.post("/projects/{project_id}/draft", response_model=AdminProject)
 def draft(project_id: UUID, data: VersionInput, db: AdminDB):
     return transition(project_id, data, db, "draft")
+
+
+@admin.get("/dashboard", response_model=Dashboard)
+def dashboard(db: AdminDB):
+    return service.dashboard(db)
