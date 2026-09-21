@@ -54,9 +54,42 @@ def migrated_database():
                 .mappings()
                 .one()
             )
+        command.upgrade(config, "0005_project_videos")
+        retained_video = uuid4()
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO project_videos(id,project_id,original_key,size_bytes,status) VALUES (:id,:project,:key,12,'failed')"
+                ),
+                {
+                    "id": retained_video,
+                    "project": retained_id,
+                    "key": f"originals/{retained_video}/source",
+                },
+            )
+            video_before = dict(
+                conn.execute(
+                    text("SELECT * FROM project_videos WHERE id=:id"), {"id": retained_video}
+                )
+                .mappings()
+                .one()
+            )
+            audit_before = list(
+                conn.execute(text("SELECT * FROM audit.events ORDER BY id")).mappings()
+            )
         command.upgrade(config, "head")
         command.check(config)
         with engine.connect() as conn:
+            assert video_before == dict(
+                conn.execute(
+                    text("SELECT * FROM project_videos WHERE id=:id"), {"id": retained_video}
+                )
+                .mappings()
+                .one()
+            )
+            assert audit_before == list(
+                conn.execute(text("SELECT * FROM audit.events ORDER BY id")).mappings()
+            )
             after = dict(
                 conn.execute(text("SELECT * FROM projects WHERE id=:id"), {"id": retained_id})
                 .mappings()

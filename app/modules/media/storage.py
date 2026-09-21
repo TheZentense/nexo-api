@@ -29,7 +29,7 @@ class LocalStorage:
         target = self.path(key)
         target.parent.mkdir(parents=True, exist_ok=True)
         # Las claves son únicas. Nunca reemplazamos un original existente.
-        with target.open("xb") as output, source.open("rb") as stream:
+        with source.open("rb") as stream, target.open("xb") as output:
             try:
                 shutil.copyfileobj(stream, output)
             except Exception:

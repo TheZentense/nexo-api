@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.core.audit import set_audit_context
 from app.modules.auth.router import database
 from app.modules.auth.service import bearer, require_admin
+from app.modules.media.image_service import cover_urls
 from app.modules.projects import service
 from app.modules.projects.models import Category, Project
 from app.modules.projects.schemas import (
@@ -17,9 +18,10 @@ from app.modules.projects.schemas import (
     CategoryOutput,
     Dashboard,
     ProjectCreate,
-    ProjectDetail,
     ProjectPatch,
     PublicPage,
+    PublicProjectDetail,
+    PublicProjectSummary,
     Status,
     VersionInput,
 )
@@ -56,22 +58,37 @@ def categories(db: DB):
 @public.get("/projects", response_model=PublicPage)
 def public_projects(
     db: DB,
+    request: Request,
+    response: Response,
     category_id: UUID | None = None,
     year: Annotated[int | None, Query(ge=1900, le=9998)] = None,
     page: Annotated[int, Query(ge=1, le=10000)] = 1,
     page_size: Annotated[int, Query(ge=1, le=50)] = 12,
 ):
-    return service.list_projects(
+    page_data = service.list_projects(
         db, status="published", category_id=category_id, year=year, page=page, page_size=page_size
     )
+    covers = cover_urls(db, [item.id for item in page_data["items"]], request.app.state.storage)
+    page_data["items"] = [
+        PublicProjectSummary.model_validate(item).model_copy(
+            update={"cover_url": covers.get(item.id)}
+        )
+        for item in page_data["items"]
+    ]
+    response.headers["Cache-Control"] = "no-store"
+    return page_data
 
 
-@public.get("/projects/{slug}", response_model=ProjectDetail)
-def project_detail(slug: str, db: DB):
+@public.get("/projects/{slug}", response_model=PublicProjectDetail)
+def project_detail(slug: str, request: Request, response: Response, db: DB):
     project = db.scalar(select(Project).where(Project.slug == slug, Project.status == "published"))
     if project is None:
         raise HTTPException(404, "Project not found")
-    return project
+    covers = cover_urls(db, [project.id], request.app.state.storage)
+    response.headers["Cache-Control"] = "no-store"
+    return PublicProjectDetail.model_validate(project).model_copy(
+        update={"cover_url": covers.get(project.id)}
+    )
 
 
 @admin.post("/categories", response_model=CategoryOutput, status_code=201)
