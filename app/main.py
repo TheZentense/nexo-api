@@ -10,6 +10,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.config import Settings
 from app.core.database import build_engine
+from app.core.request_limits import PublicFormLimit
 from app.modules.auth.router import router as auth_router
 from app.modules.contact.router import admin as contact_admin
 from app.modules.contact.router import router as contact_router
@@ -36,6 +37,7 @@ def create_app(settings: Settings | None = None):
     app.state.engine = engine
     app.state.settings = settings
     app.state.storage = LocalStorage(settings.storage_root)
+    app.add_middleware(PublicFormLimit)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
