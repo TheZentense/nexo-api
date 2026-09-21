@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
@@ -14,7 +15,8 @@ class ImageVariant(BaseModel):
 
 class ImageOutput(BaseModel):
     id: UUID
-    status: Literal["pending", "processing", "ready", "failed", "unavailable"]
+    status: Literal["pending", "processing", "ready", "failed", "unavailable", "archived"]
+    archived_at: datetime | None
     alt_text: str
     position: int
     is_cover: bool

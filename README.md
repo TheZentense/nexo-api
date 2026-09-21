@@ -409,7 +409,7 @@ como máximo un archivo, dando prioridad a un video pendiente si existe.
   más de diez minutos detenido, con la misma regla que los videos.
 
 Se aceptan JPEG, PNG y WebP estáticos. El límite inicial es 15 MiB, 25 millones de
-píxeles y diez imágenes por proyecto, incluyendo pendientes y fallidas. Se pueden
+píxeles y diez imágenes activas por proyecto, incluyendo pendientes y fallidas. Se pueden
 reducir los límites con `IMAGE_MAX_BYTES` e `IMAGE_MAX_PIXELS`. No se aceptan SVG,
 GIF ni imágenes animadas. La cabecera se comprueba al subir; la decodificación y
 los límites de píxeles se verifican después, fuera de la petición web.
@@ -437,7 +437,7 @@ Usa `PATCH /api/v1/admin/projects/{id}/images`, tomando la versión del último 
 }
 ```
 
-La lista debe incluir todas las imágenes del proyecto exactamente una vez. La portada
+La lista debe incluir todas las imágenes activas del proyecto exactamente una vez. La portada
 puede ser null, o una imagen disponible del mismo proyecto. Solo puede haber una
 portada por proyecto, también protegido por un índice único en PostgreSQL.
 Una versión antigua devuelve 409; vuelve a cargar la galería antes de guardar.
@@ -458,6 +458,29 @@ una variante, se puede usar otra disponible; si no queda ninguna, la imagen resp
 red y mostrar una imagen alternativa o un mensaje. No se entregan rutas internas ni
 claves de almacenamiento. Archivar el proyecto cierra el acceso público a sus imágenes.
 
-Retirar o reemplazar imágenes y videos queda para un cambio posterior; esta etapa
-no elimina originales. El adaptador de bucket también queda pendiente, sin cambiar
-la interfaz de almacenamiento ni introducir URLs permanentes en la base.
+### Retirar una imagen
+
+Envía `POST /api/v1/admin/images/{id}/archive` con JWT y la versión actual:
+
+```json
+{"version": 5}
+```
+
+La respuesta contiene la galería activa y la nueva `project_version`. La imagen deja
+el catálogo y sus rutas públicas devuelven 404. Si era portada, el proyecto queda sin
+portada hasta elegir otra. Las demás imágenes mantienen su orden y se libera un cupo.
+El original y las variantes terminadas se conservan en privado.
+
+Consulta `GET /api/v1/admin/projects/{id}/images?archived=true` para ver solo las
+retiradas, con `status: "archived"` y `archived_at`. Sus originales siguen disponibles
+con JWT. No se pueden editar, reintentar ni incluir en el orden de la galería.
+Repetir el retiro con la versión actual no crea otro evento ni cambia la versión;
+una versión antigua devuelve 409.
+
+La migración `0007_archive_project_images` agrega la fecha de retiro sin borrar datos.
+La auditoría registra quién retiró la imagen y cuándo. Si estaba convirtiéndose,
+el worker descarta el resultado y conserva el original. Esta etapa no incluye restaurar
+imágenes, reemplazarlas ni retirar videos. Tampoco puede revocar una copia descargada.
+
+El adaptador de bucket queda pendiente, manteniendo la interfaz de almacenamiento
+sin introducir URLs permanentes en la base.

@@ -62,4 +62,5 @@ class ProjectImage(Base):
     position: Mapped[int] = mapped_column(server_default="0")
     is_cover: Mapped[bool] = mapped_column(server_default="false")
     alt_text: Mapped[str] = mapped_column(String(250), server_default="")
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
