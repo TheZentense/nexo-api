@@ -22,10 +22,13 @@ from app.modules.projects import models as project_models  # noqa: F401
 
 def process_one(engine, settings: Settings, storage: Storage, *, kind="video"):
     model = ProjectImage if kind == "image" else ProjectVideo
+    conditions = [model.status == "pending"]
+    if kind == "image":
+        conditions.append(ProjectImage.archived_at.is_(None))
     with Session(engine) as db, db.begin():
         item = db.scalar(
             select(model)
-            .where(model.status == "pending")
+            .where(*conditions)
             .order_by(model.created_at, model.id)
             .with_for_update(skip_locked=True)
             .limit(1)
@@ -110,7 +113,12 @@ def process_one(engine, settings: Settings, storage: Storage, *, kind="video"):
         with Session(engine) as db, db.begin():
             item = db.scalar(select(model).where(model.id == identifier).with_for_update())
             # Un intento viejo nunca puede reemplazar el resultado de un reintento.
-            if item and item.status == "processing" and item.attempt_id == attempt:
+            if (
+                item
+                and item.status == "processing"
+                and item.attempt_id == attempt
+                and (kind != "image" or item.archived_at is None)
+            ):
                 set_audit_context(db, None)
                 item.status = "failed" if error else "ready"
                 item.error_code = error

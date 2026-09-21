@@ -27,9 +27,11 @@ def available_variants(item, storage: Storage):
 def image_output(item, storage: Storage, private=False):
     available = available_variants(item, storage)
     prefix = "/api/v1/admin" if private else "/api/v1"
+    status = "unavailable" if item.status == "ready" and not available else item.status
     return {
         "id": item.id,
-        "status": "unavailable" if item.status == "ready" and not available else item.status,
+        "status": "archived" if item.archived_at is not None else status,
+        "archived_at": item.archived_at,
         "position": item.position,
         "is_cover": item.is_cover,
         "alt_text": item.alt_text,
@@ -46,10 +48,15 @@ def image_output(item, storage: Storage, private=False):
     }
 
 
-def gallery(db: Session, project, storage: Storage, private=False):
+def gallery(db: Session, project, storage: Storage, private=False, archived=False):
+    visibility = (
+        ProjectImage.archived_at.is_not(None)
+        if private and archived
+        else ProjectImage.archived_at.is_(None)
+    )
     items = db.scalars(
         select(ProjectImage)
-        .where(ProjectImage.project_id == project.id)
+        .where(ProjectImage.project_id == project.id, visibility)
         .order_by(ProjectImage.position, ProjectImage.id)
     ).all()
     return {
@@ -64,7 +71,9 @@ def store_upload(db, project_id, source, size, alt_text, storage: Storage):
     if project is None:
         raise HTTPException(404, "Project not found")
     count = db.scalar(
-        select(func.count()).select_from(ProjectImage).where(ProjectImage.project_id == project_id)
+        select(func.count())
+        .select_from(ProjectImage)
+        .where(ProjectImage.project_id == project_id, ProjectImage.archived_at.is_(None))
     )
     if count >= 10:
         raise HTTPException(409, "A project can contain at most ten images")
@@ -95,7 +104,11 @@ def store_upload(db, project_id, source, size, alt_text, storage: Storage):
 
 def update_gallery(db, project_id, data, storage):
     project = get_project(db, project_id, data.version)
-    items = db.scalars(select(ProjectImage).where(ProjectImage.project_id == project_id)).all()
+    items = db.scalars(
+        select(ProjectImage).where(
+            ProjectImage.project_id == project_id, ProjectImage.archived_at.is_(None)
+        )
+    ).all()
     by_id = {item.id: item for item in items}
     if len(data.image_ids) != len(set(data.image_ids)) or set(data.image_ids) != set(by_id):
         raise HTTPException(422, "Include every image of this project exactly once")
@@ -119,6 +132,8 @@ def retry(db, image_id):
     item = db.scalar(select(ProjectImage).where(ProjectImage.id == image_id).with_for_update())
     if item is None:
         raise HTTPException(404, "Image not found")
+    if item.archived_at is not None:
+        raise HTTPException(409, "Archived images cannot be retried")
     stale = (
         item.status == "processing"
         and item.started_at is not None
@@ -136,7 +151,9 @@ def cover_urls(db: Session, project_ids: list[UUID], storage: Storage):
         return {}
     items = db.scalars(
         select(ProjectImage).where(
-            ProjectImage.project_id.in_(project_ids), ProjectImage.is_cover.is_(True)
+            ProjectImage.project_id.in_(project_ids),
+            ProjectImage.is_cover.is_(True),
+            ProjectImage.archived_at.is_(None),
         )
     ).all()
     result = {}
@@ -146,3 +163,27 @@ def cover_urls(db: Session, project_ids: list[UUID], storage: Storage):
             label = min(available, key=lambda key: available[key]["width"])
             result[item.project_id] = f"/api/v1/images/{item.id}/{label}"
     return result
+
+
+def archive(db: Session, image_id: UUID, version: int):
+    project_id = db.scalar(select(ProjectImage.project_id).where(ProjectImage.id == image_id))
+    if project_id is None:
+        raise HTTPException(404, "Image not found")
+    # Mismo orden de bloqueo que al editar la galería: primero el proyecto.
+    project = get_project(db, project_id, version)
+    item = db.scalar(select(ProjectImage).where(ProjectImage.id == image_id).with_for_update())
+    if item.archived_at is not None:
+        return project
+    item.archived_at = datetime.now(UTC)
+    item.is_cover = False
+    item.attempt_id = None
+    active = db.scalars(
+        select(ProjectImage)
+        .where(ProjectImage.project_id == project_id, ProjectImage.archived_at.is_(None))
+        .order_by(ProjectImage.position, ProjectImage.id)
+    ).all()
+    for position, image in enumerate(active):
+        image.position = position
+    project.updated_at = func.now()
+    db.commit()
+    return project

@@ -13,6 +13,7 @@ from app.modules.media.models import ProjectImage
 from app.modules.media.uploads import receive_file
 from app.modules.projects.models import Project
 from app.modules.projects.router import DB, AdminDB
+from app.modules.projects.schemas import VersionInput
 from app.modules.projects.service import get_project
 
 admin = APIRouter()
@@ -56,8 +57,10 @@ async def upload(
 
 
 @admin.get("/projects/{project_id}/images", response_model=GalleryOutput)
-def admin_gallery(project_id: UUID, request: Request, db: AdminDB):
-    return service.gallery(db, get_project(db, project_id), request.app.state.storage, True)
+def admin_gallery(project_id: UUID, request: Request, db: AdminDB, archived: bool = False):
+    return service.gallery(
+        db, get_project(db, project_id), request.app.state.storage, True, archived
+    )
 
 
 @public.get("/projects/{slug}/images", response_model=GalleryOutput)
@@ -81,6 +84,9 @@ def edit_text(image_id: UUID, data: ImageTextInput, request: Request, db: AdminD
     if item is None:
         raise HTTPException(404, "Image not found")
     project = get_project(db, item.project_id, data.version)
+    db.refresh(item)
+    if item.archived_at is not None:
+        raise HTTPException(409, "Archived images cannot be edited")
     item.alt_text = data.alt_text
     project.updated_at = func.now()
     db.commit()
@@ -92,10 +98,18 @@ def retry(image_id: UUID, request: Request, db: AdminDB):
     return service.image_output(service.retry(db, image_id), request.app.state.storage, True)
 
 
+@admin.post("/images/{image_id}/archive", response_model=GalleryOutput)
+def archive(image_id: UUID, data: VersionInput, request: Request, db: AdminDB):
+    project = service.archive(db, image_id, data.version)
+    return service.gallery(db, project, request.app.state.storage, True)
+
+
 def content(image_id, variant, request, db, private=False):
     query = select(ProjectImage).where(ProjectImage.id == image_id)
     if not private:
-        query = query.join(Project).where(Project.status == "published")
+        query = query.join(Project).where(
+            Project.status == "published", ProjectImage.archived_at.is_(None)
+        )
     item = db.scalar(query)
     if item is None or (variant != "original" and item.status != "ready"):
         raise HTTPException(404, "Media unavailable")
