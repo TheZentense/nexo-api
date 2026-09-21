@@ -535,7 +535,7 @@ la confianza en proxies deberá configurarse explícitamente al pasar a producci
 La migración `0009_contact_messages` crea la tabla sin modificar datos anteriores.
 El rol de la API necesita INSERT y SELECT sobre `contact_messages`, junto con los permisos ya existentes
 sobre `auth_rate_limits`. El público no puede listar ni descargar mensajes. Esta etapa
-no envía correos ni modifica el estado de los mensajes.
+no envía correos.
 
 
 ### Consultar contacto desde administración
@@ -548,4 +548,21 @@ El listado incluye ID, nombre, correo y fecha, sin el texto completo.
 `GET /api/v1/admin/contact-messages/{id}` devuelve además `message`.
 Un ID inexistente devuelve 404; sin un token válido ambas consultas devuelven 401.
 Las respuestas usan Cache-Control: no-store por contener información personal.
-Consultar un mensaje no lo modifica. Marcarlo como atendido queda para otro cambio.
+Consultar un mensaje no lo modifica.
+
+
+### Marcar contacto como atendido
+
+Con JWT, `POST /api/v1/admin/contact-messages/{id}/handle` marca el mensaje como
+atendido sin cuerpo de petición. Devuelve el detalle con `handled_at`; null significa
+pendiente. Repetir la acción conserva la primera fecha y no duplica la auditoría.
+No envía una respuesta al remitente ni cambia el texto recibido.
+
+El listado acepta `?handled=false` para pendientes y `?handled=true` para atendidos.
+Sin el filtro devuelve ambos; `total` respeta el filtro. La paginación sigue disponible.
+
+La migración `0010_handle_contact_messages` conserva los mensajes existentes como
+pendientes. Un trigger registra el administrador, la petición y la fecha del cambio
+en `audit.events`, sin copiar nombre, correo ni texto del mensaje al historial.
+El rol de la API necesita además `UPDATE(handled_at)` sobre `contact_messages`.
+Esta etapa no incluye reabrir mensajes ni eliminarlos.

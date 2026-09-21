@@ -162,3 +162,61 @@ def test_contact_admin_stable_order_for_equal_dates(account):
         ).json()
         ids.append(result["items"][0]["id"])
     assert ids == [str(identifier) for identifier in identifiers]
+
+
+def test_handle_message_preserves_content_and_audit(account):
+    from tests.helpers import login
+
+    client, engine, user_id, *_ = account
+    data = payload()
+    assert client.post("/api/v1/contact-messages", json=data).status_code == 201
+    with engine.connect() as db:
+        identifier = db.execute(
+            select(ContactMessage.id).where(ContactMessage.email == data["email"].lower())
+        ).scalar_one()
+    url = f"/api/v1/admin/contact-messages/{identifier}/handle"
+    assert client.post(url).status_code == 401
+    login(account)
+    before = client.get(f"/api/v1/admin/contact-messages/{identifier}").json()
+    pending = client.get("/api/v1/admin/contact-messages?handled=false").json()["total"]
+    result = client.post(url)
+    assert result.status_code == 200
+    assert result.headers["cache-control"] == "no-store"
+    after = result.json()
+    assert after["handled_at"] is not None
+    assert {key: value for key, value in after.items() if key != "handled_at"} == {
+        key: value for key, value in before.items() if key != "handled_at"
+    }
+    assert client.post(url).json() == after
+    assert client.get("/api/v1/admin/contact-messages?handled=false").json()["total"] == pending - 1
+    done = client.get("/api/v1/admin/contact-messages?handled=true").json()
+    assert str(identifier) in [item["id"] for item in done["items"]]
+    assert all(item["handled_at"] is not None for item in done["items"])
+    assert client.get("/api/v1/admin/contact-messages?handled=invalid").status_code == 422
+    assert client.post(f"/api/v1/admin/contact-messages/{uuid4()}/handle").status_code == 404
+    with engine.connect() as db:
+        events = (
+            db.execute(
+                text(
+                    "SELECT actor_id,request_id,action,before_data,after_data FROM audit.events WHERE record_id=:id"
+                ),
+                {"id": identifier},
+            )
+            .mappings()
+            .all()
+        )
+        assert len(events) == 1
+        event = events[0]
+        assert event["actor_id"] == user_id and event["request_id"] is not None
+        assert event["action"] == "handled"
+        assert event["before_data"]["handled_at"] is None
+        assert event["after_data"]["handled_at"] is not None
+        assert set(event["after_data"]) == {"id", "handled_at"}
+    client.post("/api/v1/auth/logout")
+    assert client.post(url).status_code == 401
+
+
+def test_public_sender_cannot_mark_message_handled(account):
+    client, *_ = account
+    data = {**payload(), "handled_at": "2026-01-01T00:00:00Z"}
+    assert client.post("/api/v1/contact-messages", json=data).status_code == 422
