@@ -506,3 +506,46 @@ La migración `0008_archive_project_videos` agrega una fecha nullable y registra
 el retiro en auditoría, sin alterar los datos anteriores. No se incluye restauración
 ni borrado físico. Con un bucket se mantendrá esta separación entre archivos privados
 y acceso público; una URL firmada ya emitida requerirá su propia caducidad.
+
+
+## Mensajes de contacto
+
+`POST /api/v1/contact-messages` recibe solicitudes sin JWT:
+
+```json
+{
+  "name": "Ana",
+  "email": "ana@example.com",
+  "message": "Quisiera conocer las actividades de voluntariado."
+}
+```
+
+Devuelve 201 con `{"detail": "Message received"}`. Guarda nombre (1–120 caracteres),
+correo válido (hasta 254) y mensaje (1–5000), quitando espacios en los extremos.
+No admite campos adicionales ni textos vacíos. El contenido se guarda como texto;
+cuando se construya la vista administrativa debe mostrarse como texto, sin interpretar HTML.
+La respuesta no incluye datos personales ni el identificador del mensaje.
+
+El límite es cinco envíos por dirección de conexión y tres por correo cada 15 minutos.
+Los contadores se comparten entre procesos y son independientes del login. Al alcanzar
+el límite se devuelve 429 con Retry-After. Es una protección básica, no sustituye los
+límites de tamaño y tráfico del servidor al desplegar. La API no lee X-Forwarded-For;
+la confianza en proxies deberá configurarse explícitamente al pasar a producción.
+
+La migración `0009_contact_messages` crea la tabla sin modificar datos anteriores.
+El rol de la API necesita INSERT y SELECT sobre `contact_messages`, junto con los permisos ya existentes
+sobre `auth_rate_limits`. El público no puede listar ni descargar mensajes. Esta etapa
+no envía correos ni modifica el estado de los mensajes.
+
+
+### Consultar contacto desde administración
+
+Con JWT, `GET /api/v1/admin/contact-messages?page=1&page_size=20` devuelve
+`items`, `total`, `page` y `page_size`. El tamaño máximo es 50. Los mensajes más
+recientes aparecen primero; el ID desempata cuando tienen la misma fecha.
+El listado incluye ID, nombre, correo y fecha, sin el texto completo.
+
+`GET /api/v1/admin/contact-messages/{id}` devuelve además `message`.
+Un ID inexistente devuelve 404; sin un token válido ambas consultas devuelven 401.
+Las respuestas usan Cache-Control: no-store por contener información personal.
+Consultar un mensaje no lo modifica. Marcarlo como atendido queda para otro cambio.

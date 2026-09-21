@@ -4,6 +4,7 @@ from sqlalchemy import create_engine, pool
 from app.core.config import DatabaseSettings
 from app.core.database import Base
 from app.modules.auth import models as auth_models  # noqa: F401
+from app.modules.contact import models as contact_models  # noqa: F401
 from app.modules.media import models as media_models  # noqa: F401
 from app.modules.projects import models  # noqa: F401
 
