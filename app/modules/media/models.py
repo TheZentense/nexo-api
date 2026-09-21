@@ -28,6 +28,7 @@ class ProjectVideo(Base):
     error_code: Mapped[str | None] = mapped_column(String(40))
     attempt_id: Mapped[UUID | None]
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

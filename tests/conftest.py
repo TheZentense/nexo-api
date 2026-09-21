@@ -112,13 +112,15 @@ def migrated_database():
             )
             assert image_before == {key: image_after[key] for key in image_before}
             assert image_after["archived_at"] is None
-            assert video_before == dict(
+            video_after = dict(
                 conn.execute(
                     text("SELECT * FROM project_videos WHERE id=:id"), {"id": retained_video}
                 )
                 .mappings()
                 .one()
             )
+            assert video_before == {key: video_after[key] for key in video_before}
+            assert video_after["archived_at"] is None
             assert audit_before == list(
                 conn.execute(text("SELECT * FROM audit.events ORDER BY id")).mappings()
             )
