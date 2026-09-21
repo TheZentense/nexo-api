@@ -7,6 +7,7 @@ from app.modules.auth import models as auth_models  # noqa: F401
 from app.modules.contact import models as contact_models  # noqa: F401
 from app.modules.media import models as media_models  # noqa: F401
 from app.modules.projects import models  # noqa: F401
+from app.modules.volunteering import models as volunteering_models  # noqa: F401
 
 settings = DatabaseSettings()
 url = (settings.migration_database_url or settings.database_url).get_secret_value()
