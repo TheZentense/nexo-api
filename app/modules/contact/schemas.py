@@ -24,6 +24,7 @@ class ContactSummary(BaseModel):
     name: str
     email: str
     created_at: datetime
+    handled_at: datetime | None
 
 
 class ContactDetail(ContactSummary):

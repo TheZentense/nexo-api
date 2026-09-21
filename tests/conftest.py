@@ -100,9 +100,34 @@ def migrated_database():
             audit_before = list(
                 conn.execute(text("SELECT * FROM audit.events ORDER BY id")).mappings()
             )
+        command.upgrade(config, "0009_contact_messages")
+        retained_contact = uuid4()
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO contact_messages(id,name,email,message) VALUES (:id,'Example','example@example.com','Keep this message')"
+                ),
+                {"id": retained_contact},
+            )
+            contact_before = dict(
+                conn.execute(
+                    text("SELECT * FROM contact_messages WHERE id=:id"), {"id": retained_contact}
+                )
+                .mappings()
+                .one()
+            )
         command.upgrade(config, "head")
         command.check(config)
         with engine.connect() as conn:
+            contact_after = dict(
+                conn.execute(
+                    text("SELECT * FROM contact_messages WHERE id=:id"), {"id": retained_contact}
+                )
+                .mappings()
+                .one()
+            )
+            assert contact_before == {key: contact_after[key] for key in contact_before}
+            assert contact_after["handled_at"] is None
             image_after = dict(
                 conn.execute(
                     text("SELECT * FROM project_images WHERE id=:id"), {"id": retained_image}
