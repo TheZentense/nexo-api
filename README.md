@@ -533,7 +533,19 @@ límites de tamaño y tráfico del servidor al desplegar. La API no lee X-Forwar
 la confianza en proxies deberá configurarse explícitamente al pasar a producción.
 
 La migración `0009_contact_messages` crea la tabla sin modificar datos anteriores.
-El rol de la API necesita INSERT y SELECT(id, created_at) sobre `contact_messages`
-(para recuperar los valores generados al insertar), junto con los permisos ya existentes
+El rol de la API necesita INSERT y SELECT sobre `contact_messages`, junto con los permisos ya existentes
 sobre `auth_rate_limits`. El público no puede listar ni descargar mensajes. Esta etapa
-no envía correos ni incluye una bandeja administrativa; ambas cosas son independientes.
+no envía correos ni modifica el estado de los mensajes.
+
+
+### Consultar contacto desde administración
+
+Con JWT, `GET /api/v1/admin/contact-messages?page=1&page_size=20` devuelve
+`items`, `total`, `page` y `page_size`. El tamaño máximo es 50. Los mensajes más
+recientes aparecen primero; el ID desempata cuando tienen la misma fecha.
+El listado incluye ID, nombre, correo y fecha, sin el texto completo.
+
+`GET /api/v1/admin/contact-messages/{id}` devuelve además `message`.
+Un ID inexistente devuelve 404; sin un token válido ambas consultas devuelven 401.
+Las respuestas usan Cache-Control: no-store por contener información personal.
+Consultar un mensaje no lo modifica. Marcarlo como atendido queda para otro cambio.
