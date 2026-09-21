@@ -19,6 +19,8 @@ from app.modules.media.router import admin as media_admin
 from app.modules.media.router import public as media_public
 from app.modules.media.storage import LocalStorage
 from app.modules.projects.router import admin, public
+from app.modules.volunteering.router import admin as volunteer_admin
+from app.modules.volunteering.router import public as volunteer_public
 
 
 def create_app(settings: Settings | None = None):
@@ -50,6 +52,11 @@ def create_app(settings: Settings | None = None):
 
     app.include_router(contact_router, prefix="/api/v1", tags=["Contact"])
     app.include_router(contact_admin, prefix="/api/v1/admin", tags=["Contact administration"])
+
+    app.include_router(volunteer_public, prefix="/api/v1", tags=["Volunteering"])
+    app.include_router(
+        volunteer_admin, prefix="/api/v1/admin", tags=["Volunteering administration"]
+    )
 
     @app.exception_handler(HTTPException)
     async def http_error(request, exc):
