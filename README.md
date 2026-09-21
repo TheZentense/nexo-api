@@ -615,3 +615,24 @@ La migración `0011_volunteer_applications` agrega tabla, restricciones e histor
 modificar datos anteriores. El rol de la API necesita SELECT e INSERT sobre
 `volunteer_applications`, y UPDATE(status, version, updated_at). No necesita escribir
 directamente en `audit.events`; lo hace el trigger con sus permisos limitados.
+
+
+## Revisión del backend local
+
+Contacto y voluntariado rechazan cuerpos de petición mayores de 32 KiB antes de
+interpretar el JSON o acceder a la base. El límite cuenta los bytes reales, también
+si llegan por fragmentos o la cabecera Content-Length no es fiable. Un exceso devuelve
+413 con Cache-Control: no-store. Las subidas de imágenes y videos mantienen sus límites
+propios. En producción aún hacen falta límites de conexión y tiempo en el servidor.
+
+Las pruebas cubren además un flujo HTTP con el rol limitado de la API: login, proyectos,
+contacto, voluntariado, subida y retiro de una imagen, y logout. Comprueban que ese rol
+pueda generar auditoría sin modificar el historial ni los datos del solicitante.
+El rol y los datos de esta prueba se revierten; los archivos usan almacenamiento temporal.
+
+El alcance local incluye catálogo, administración con JWT, multimedia, contacto y
+voluntariado. Por ahora las propuestas pueden recibirse mediante contacto; no existe
+un formulario ni proceso independiente para ellas. Quedan fuera el bucket, Angular,
+correo saliente, pagos y despliegue. Antes de producción se deben verificar HTTPS,
+proxy, respaldos/restauración, secretos y permisos en el servidor elegido. Las pruebas
+funcionales no sustituyen una evaluación de seguridad del entorno desplegado.
