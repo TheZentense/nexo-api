@@ -72,7 +72,13 @@ def test_full_flow_permissions_original_and_audit(media, clip):
     assert response.status_code == 202
     item = response.json()
     identifier = item["id"]
-    assert item == {"id": identifier, "status": "pending", "video_url": None, "poster_url": None}
+    assert item == {
+        "id": identifier,
+        "status": "pending",
+        "archived_at": None,
+        "video_url": None,
+        "poster_url": None,
+    }
     assert response.headers["cache-control"] == "no-store"
     assert process_one(engine, client.app.state.settings, storage)
     listed = client.get(f"/api/v1/admin/projects/{project['id']}/videos").json()[0]

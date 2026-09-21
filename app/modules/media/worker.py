@@ -22,9 +22,7 @@ from app.modules.projects import models as project_models  # noqa: F401
 
 def process_one(engine, settings: Settings, storage: Storage, *, kind="video"):
     model = ProjectImage if kind == "image" else ProjectVideo
-    conditions = [model.status == "pending"]
-    if kind == "image":
-        conditions.append(ProjectImage.archived_at.is_(None))
+    conditions = [model.status == "pending", model.archived_at.is_(None)]
     with Session(engine) as db, db.begin():
         item = db.scalar(
             select(model)
@@ -117,7 +115,7 @@ def process_one(engine, settings: Settings, storage: Storage, *, kind="video"):
                 item
                 and item.status == "processing"
                 and item.attempt_id == attempt
-                and (kind != "image" or item.archived_at is None)
+                and item.archived_at is None
             ):
                 set_audit_context(db, None)
                 item.status = "failed" if error else "ready"

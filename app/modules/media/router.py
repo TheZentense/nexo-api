@@ -13,6 +13,8 @@ from app.modules.media.uploads import receive_file
 from app.modules.media.video import InvalidVideo, input_options
 from app.modules.projects.models import Project
 from app.modules.projects.router import DB, AdminDB
+from app.modules.projects.schemas import VersionInput
+from app.modules.projects.service import get_project
 
 admin = APIRouter()
 public = APIRouter()
@@ -20,7 +22,8 @@ public = APIRouter()
 
 class VideoOutput(BaseModel):
     id: UUID
-    status: Literal["pending", "processing", "ready", "failed", "unavailable"]
+    status: Literal["pending", "processing", "ready", "failed", "unavailable", "archived"]
+    archived_at: datetime | None
     video_url: str | None
     poster_url: str | None
 
@@ -46,7 +49,8 @@ def representation(item, request, private=False):
             pass
     return {
         "id": item.id,
-        "status": status,
+        "status": "archived" if item.archived_at else status,
+        "archived_at": item.archived_at,
         "video_url": base + "/content" if status == "ready" else None,
         "poster_url": poster,
     }
@@ -92,7 +96,7 @@ async def upload(project_id: UUID, request: Request, db: AdminDB):
         count = db.scalar(
             select(func.count())
             .select_from(ProjectVideo)
-            .where(ProjectVideo.project_id == project_id)
+            .where(ProjectVideo.project_id == project_id, ProjectVideo.archived_at.is_(None))
         )
         if count >= 2:
             raise HTTPException(409, "A project can contain at most two videos")
@@ -114,12 +118,17 @@ async def upload(project_id: UUID, request: Request, db: AdminDB):
 
 
 @admin.get("/projects/{project_id}/videos", response_model=list[VideoOutput])
-def admin_list(project_id: UUID, request: Request, db: AdminDB):
+def admin_list(project_id: UUID, request: Request, db: AdminDB, archived: bool = False):
     if db.get(Project, project_id) is None:
         raise HTTPException(404, "Project not found")
     items = db.scalars(
         select(ProjectVideo)
-        .where(ProjectVideo.project_id == project_id)
+        .where(
+            ProjectVideo.project_id == project_id,
+            ProjectVideo.archived_at.is_not(None)
+            if archived
+            else ProjectVideo.archived_at.is_(None),
+        )
         .order_by(ProjectVideo.created_at, ProjectVideo.id)
     ).all()
     return [representation(item, request, True) for item in items]
@@ -133,7 +142,7 @@ def public_list(slug: str, request: Request, response: Response, db: DB):
         raise HTTPException(404, "Project not found")
     items = db.scalars(
         select(ProjectVideo)
-        .where(ProjectVideo.project_id == project.id)
+        .where(ProjectVideo.project_id == project.id, ProjectVideo.archived_at.is_(None))
         .order_by(ProjectVideo.created_at, ProjectVideo.id)
     ).all()
     return [representation(item, request) for item in items]
@@ -144,6 +153,8 @@ def retry(video_id: UUID, request: Request, db: AdminDB):
     item = db.scalar(select(ProjectVideo).where(ProjectVideo.id == video_id).with_for_update())
     if item is None:
         raise HTTPException(404, "Video not found")
+    if item.archived_at is not None:
+        raise HTTPException(409, "Archived videos cannot be retried")
     stale = (
         item.status == "processing"
         and item.started_at is not None
@@ -156,10 +167,28 @@ def retry(video_id: UUID, request: Request, db: AdminDB):
     return representation(item, request, True)
 
 
+@admin.post("/videos/{video_id}/archive", response_model=VideoOutput)
+def archive(video_id: UUID, data: VersionInput, request: Request, db: AdminDB):
+    project_id = db.scalar(select(ProjectVideo.project_id).where(ProjectVideo.id == video_id))
+    if project_id is None:
+        raise HTTPException(404, "Video not found")
+    # Bloqueamos primero el proyecto, igual que al subir un video.
+    project = get_project(db, project_id, data.version)
+    item = db.scalar(select(ProjectVideo).where(ProjectVideo.id == video_id).with_for_update())
+    if item.archived_at is None:
+        item.archived_at = datetime.now(UTC)
+        item.attempt_id = None
+        project.updated_at = func.now()
+        db.commit()
+    return representation(item, request, True)
+
+
 def content(video_id, variant, request, db, private=False):
     query = select(ProjectVideo).where(ProjectVideo.id == video_id)
     if not private:
-        query = query.join(Project).where(Project.status == "published")
+        query = query.join(Project).where(
+            Project.status == "published", ProjectVideo.archived_at.is_(None)
+        )
     item = db.scalar(query)
     if item is None or (variant != "original" and item.status != "ready"):
         raise HTTPException(404, "Media unavailable")
