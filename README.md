@@ -287,8 +287,8 @@ Aceptamos MP4, MOV y WebM compatibles con FFmpeg, hasta 100 MiB y dos minutos.
 Se comprueba el contenido; cambiar la extensión no convierte un archivo en video.
 La subida revisa tamaño y cabecera. El worker comprueba duración, resolución y
 que se pueda decodificar; si falla, deja el registro en `failed` y conserva el original.
-Se admiten hasta dos videos por proyecto, incluidos los pendientes y fallidos.
-Esta etapa no incluye eliminación ni reemplazo de originales.
+Se admiten hasta dos videos activos por proyecto, incluidos los pendientes y fallidos.
+Los retirados no ocupan cupo. No se eliminan ni reemplazan originales.
 
 La salida llega hasta 1280 × 720, conserva proporciones y no amplía videos pequeños.
 Usa 30 fps, compresión con pérdida y `faststart`; no garantiza que todo archivo sea
@@ -480,7 +480,29 @@ una versión antigua devuelve 409.
 La migración `0007_archive_project_images` agrega la fecha de retiro sin borrar datos.
 La auditoría registra quién retiró la imagen y cuándo. Si estaba convirtiéndose,
 el worker descarta el resultado y conserva el original. Esta etapa no incluye restaurar
-imágenes, reemplazarlas ni retirar videos. Tampoco puede revocar una copia descargada.
+imágenes ni reemplazarlas. Tampoco puede revocar una copia descargada.
 
 El adaptador de bucket queda pendiente, manteniendo la interfaz de almacenamiento
 sin introducir URLs permanentes en la base.
+
+
+### Retirar un video
+
+Usa `POST /api/v1/admin/videos/{id}/archive` con JWT y `{"version": 3}`,
+tomando la versión actual de la consulta administrativa del proyecto. Devuelve el
+video con `status: "archived"` y su fecha `archived_at`. El retiro actualiza la
+versión del proyecto: vuelve a consultarla antes de editarlo o publicar.
+
+La lista normal muestra solo videos activos. Para consultar los retirados usa
+`GET /api/v1/admin/projects/{id}/videos?archived=true`. El original y las copias
+terminadas siguen disponibles con JWT; el video y la portada dejan de estar
+accesibles públicamente y sus rutas devuelven 404. Se libera un cupo para otra subida.
+
+Una versión antigua devuelve 409. Repetir el retiro con la versión actual no
+crea otro evento ni vuelve a cambiar el proyecto. Un video retirado no admite
+reintentos. Si estaba convirtiéndose, el worker descarta la copia y conserva el original.
+
+La migración `0008_archive_project_videos` agrega una fecha nullable y registra
+el retiro en auditoría, sin alterar los datos anteriores. No se incluye restauración
+ni borrado físico. Con un bucket se mantendrá esta separación entre archivos privados
+y acceso público; una URL firmada ya emitida requerirá su propia caducidad.
