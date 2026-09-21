@@ -566,3 +566,52 @@ pendientes. Un trigger registra el administrador, la petición y la fecha del ca
 en `audit.events`, sin copiar nombre, correo ni texto del mensaje al historial.
 El rol de la API necesita además `UPDATE(handled_at)` sobre `contact_messages`.
 Esta etapa no incluye reabrir mensajes ni eliminarlos.
+
+
+## Solicitudes de voluntariado
+
+`POST /api/v1/volunteer-applications` recibe solicitudes sin JWT:
+
+```json
+{
+  "name": "Ana",
+  "email": "ana@example.com",
+  "area": "education",
+  "message": "Puedo apoyar los fines de semana."
+}
+```
+
+Las áreas son `education`, `health` y `environment`. Nombre y correo son obligatorios;
+el mensaje es opcional y admite hasta 2000 caracteres. Se rechazan campos adicionales.
+La respuesta es 201 con `{"detail": "Application received"}`, sin datos personales ni ID.
+Todas las solicitudes empiezan en `pending`, con versión 1. No se crea una cuenta
+para el solicitante ni se envía correo. El límite independiente es cinco solicitudes
+por dirección de conexión y tres por correo cada 15 minutos; excederlo devuelve 429.
+
+Con JWT, el administrador dispone de:
+
+- `GET /api/v1/admin/volunteer-applications`: listado paginado, con filtros opcionales
+  `area` y `status`. Usa `page` y `page_size` (máximo 50); `total` respeta los filtros.
+- `GET /api/v1/admin/volunteer-applications/{id}`: detalle con el mensaje completo.
+- `PATCH /api/v1/admin/volunteer-applications/{id}/status`: cambia el estado.
+
+Para aceptar una solicitud, envía la versión de su última consulta:
+
+```json
+{"status": "accepted", "version": 1}
+```
+
+Los estados son `pending`, `accepted` y `rejected`. Se permite corregir una decisión
+volviendo a cualquiera de ellos. Un cambio incrementa la versión y actualiza la fecha;
+una versión antigua devuelve 409. Repetir el estado con la versión actual no modifica
+la solicitud ni genera otro evento. Los cambios quedan auditados con el administrador,
+la petición y los estados anterior y nuevo, sin copiar nombre, correo ni mensaje.
+
+Las consultas administrativas requieren JWT y usan Cache-Control: no-store. No hay
+consulta pública de solicitudes ni eliminación en esta etapa. El mensaje se conserva
+como texto; la futura vista debe mostrarlo sin interpretar HTML.
+
+La migración `0011_volunteer_applications` agrega tabla, restricciones e historial sin
+modificar datos anteriores. El rol de la API necesita SELECT e INSERT sobre
+`volunteer_applications`, y UPDATE(status, version, updated_at). No necesita escribir
+directamente en `audit.events`; lo hace el trigger con sus permisos limitados.
