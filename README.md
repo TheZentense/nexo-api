@@ -12,7 +12,8 @@ El código y los mensajes de la API están en inglés; esta guía y los comentar
 - Evitar que una edición antigua sobrescriba cambios recientes.
 - Crear cuentas, cambiar contraseñas y desactivarlas desde la terminal.
 
-Esta etapa incluye imágenes y videos. Todavía no incluye formularios ni pagos.
+Esta etapa incluye imágenes y videos, mensajes de contacto y solicitudes de voluntariado,
+con consulta y seguimiento desde administración. Todavía no incluye pagos.
 Para publicar se piden los datos del proyecto; la portada es opcional.
 No se incluyen cuentas, contraseñas ni datos reales.
 
@@ -20,7 +21,8 @@ No se incluyen cuentas, contraseñas ni datos reales.
 
 Usamos un monolito modular con Vertical Slicing: cada funcionalidad tiene su propia
 carpeta y reúne ahí sus rutas, modelos, esquemas y servicios. Todo corre en una sola
-aplicación y usa una sola base de datos.
+aplicación y usa una sola base de datos. La conversión multimedia corre en un proceso
+separado (worker) del mismo backend.
 
 ```text
 app/
@@ -29,6 +31,8 @@ app/
     auth/               # login, JWT y sesiones
     projects/           # categorías y proyectos
     media/              # imágenes, videos, almacenamiento y conversión
+    contact/            # mensajes de contacto y seguimiento
+    volunteering/       # solicitudes de voluntariado y estados
   main.py               # reúne las rutas y los controles de salud
 migrations/             # cambios de la base, en orden
 scripts/                # tareas locales de administración
